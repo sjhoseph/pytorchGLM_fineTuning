@@ -47,6 +47,30 @@ def train_network(network_config, xtr, xte, xtr_pos, xte_pos, ytr, yte, params={
         if filename is not None:
             model = load_model(model,params,filename,meanbias=meanbias)
 
+    # ===== (NEW) finetune shifter from donor =====
+    finetune = params.get('finetune_shifter', False)
+    donor_shifter_state = None
+
+    if finetune:
+        donor_ckpt = params.get('donor_shifter_ckpt', None)
+        if donor_ckpt is None:
+            raise ValueError("finetune_shifter=True but donor_shifter_ckpt is None")
+
+        donor_state_dict, _ = torch.load(donor_ckpt, map_location='cpu')
+
+        # load shifter_nn.*
+        shifter_only = {k: v for k, v in donor_state_dict.items() if k.startswith('shifter_nn.')}
+        model.load_state_dict(shifter_only, strict=False)
+        donor_shifter_state = {
+            k: v.clone() for k, v in model.state_dict().items() if k.startswith('shifter_nn.')
+        }
+
+        # freeze: and train shifter only
+        for p in model.parameters():
+            p.requires_grad = False
+        for p in model.shifter_nn.parameters():
+            p.requires_grad = True
+
     device = "cpu"
     if torch.cuda.is_available():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,6 +80,13 @@ def train_network(network_config, xtr, xte, xtr_pos, xte_pos, ytr, yte, params={
     model.to(device)
 
     optimizer, scheduler = setup_model_training(model,params,network_config)
+
+    if finetune:
+        scheduler = None
+        lr = params.get('finetune_lr', 1e-4)
+        wd = params.get('finetune_weight_decay', 0.0)
+        optimizer = torch.optim.Adam(model.shifter_nn.parameters(), lr=lr, weight_decay=wd)
+    
     # train_dataloader = DataLoader(train_dataset, batch_size=len(train_dataset), num_workers=2, pin_memory=True,)
     # test_dataloader  = DataLoader(test_dataset,  batch_size=len(test_dataset),  num_workers=2, pin_memory=True,)
 
@@ -72,6 +103,16 @@ def train_network(network_config, xtr, xte, xtr_pos, xte_pos, ytr, yte, params={
         # forward + backward + optimize
         outputs = model(xtr,xtr_pos)
         loss = model.loss(outputs, ytr)
+
+        if finetune and (donor_shifter_state is not None):
+            lam = params.get('donor_anchor_lambda', 1e-4)
+            reg = 0.0
+        for name, p in model.named_parameters():
+            if name.startswith('shifter_nn.') and p.requires_grad:
+                reg = reg + torch.mean((p - donor_shifter_state[name].to(p.device))**2)
+
+        loss = loss + lam * reg * torch.ones_like(loss)
+
         loss.backward(torch.ones_like(loss))
         optimizer.step()
 
@@ -122,6 +163,30 @@ def train_dataset_network(network_config, train_dataset, test_dataset, params={}
         if filename is not None:
             model = load_model(model,params,filename,meanbias=meanbias)
 
+    # ===== (NEW) finetune shifter from donor =====
+    finetune = params.get('finetune_shifter', False)
+    donor_shifter_state = None
+
+    if finetune:
+        donor_ckpt = params.get('donor_shifter_ckpt', None)
+        if donor_ckpt is None:
+            raise ValueError("finetune_shifter=True but donor_shifter_ckpt is None")
+
+        donor_state_dict, _ = torch.load(donor_ckpt, map_location='cpu')
+
+        # load shifter_nn.*
+        shifter_only = {k: v for k, v in donor_state_dict.items() if k.startswith('shifter_nn.')}
+        model.load_state_dict(shifter_only, strict=False)
+        donor_shifter_state = {
+            k: v.clone() for k, v in model.state_dict().items() if k.startswith('shifter_nn.')
+        }
+
+        # freeze: and train shifter only
+        for p in model.parameters():
+            p.requires_grad = False
+        for p in model.shifter_nn.parameters():
+            p.requires_grad = True
+
     device = "cpu"
     if torch.cuda.is_available():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -131,6 +196,13 @@ def train_dataset_network(network_config, train_dataset, test_dataset, params={}
     model.to(device)
 
     optimizer, scheduler = setup_model_training(model,params,network_config)
+
+    if finetune:
+        scheduler = None
+        lr = params.get('finetune_lr', 1e-4)
+        wd = params.get('finetune_weight_decay', 0.0)
+        optimizer = torch.optim.Adam(model.shifter_nn.parameters(), lr=lr, weight_decay=wd)
+
     train_dataloader = DataLoader(train_dataset, batch_size=network_config['batch_size'], shuffle=network_config['shuffle'], num_workers=2, pin_memory=True, drop_last=True)
     test_dataloader  = DataLoader(test_dataset,  batch_size=network_config['batch_size'], shuffle=network_config['shuffle'], num_workers=2, pin_memory=True, drop_last=True)
 
@@ -150,6 +222,16 @@ def train_dataset_network(network_config, train_dataset, test_dataset, params={}
             # forward + backward + optimize
             outputs = model(xtr,xtr_pos)
             loss = model.loss(outputs, ytr)
+
+            if finetune and (donor_shifter_state is not None):
+               lam = params.get('donor_anchor_lambda', 1e-4)
+               reg = 0.0
+            for name, p in model.named_parameters():
+                if name.startswith('shifter_nn.') and p.requires_grad:
+                    reg = reg + torch.mean((p - donor_shifter_state[name].to(p.device))**2)
+
+            loss = loss + lam * reg * torch.ones_like(loss)
+
             loss.backward(torch.ones_like(loss))
             optimizer.step()
 

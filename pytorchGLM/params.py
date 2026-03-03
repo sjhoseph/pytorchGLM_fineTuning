@@ -42,6 +42,10 @@ def arg_parser(jupyter=False):
     parser.add_argument('--use_spdpup',         type=str_to_bool, default=False)
     parser.add_argument('--only_spdpup',        type=str_to_bool, default=False)
     parser.add_argument('--train_shifter',      type=str_to_bool, default=False)
+    parser.add_argument('--finetune_shifter', type=str_to_bool, default=False)
+    parser.add_argument('--donor_shifter_ckpt', type=str, default=None)
+    parser.add_argument('--finetune_lr', type=float, default=1e-4)
+    parser.add_argument('--donor_anchor_lambda', type=float, default=1e-4)
     parser.add_argument('--shifter_5050',       type=str_to_bool, default=False)
     parser.add_argument('--shifter_5050_run',   type=str_to_bool, default=False)
     parser.add_argument('--EyeHead_only',       type=str_to_bool, default=False)
@@ -179,6 +183,10 @@ def load_params(args,ModelID,file_dict=None,exp_dir_name=None,nKfold=0,debug=Fal
         'shift_hidden':             20,
         'shifter_5050_run':         args['shifter_5050_run'],
         'crop_input':               5 if args['crop_input']==True else 0,
+        'finetune_shifter': args.get('finetune_shifter', False),
+        'donor_shifter_ckpt': args.get('donor_shifter_ckpt', None),
+        'finetune_lr': args.get('finetune_lr', 1e-4),
+        'donor_anchor_lambda': args.get('donor_anchor_lambda', 1e-4),
     }
 
     params['nt_glm_lag']=len(params['lag_list']) # number of timesteps for model fits

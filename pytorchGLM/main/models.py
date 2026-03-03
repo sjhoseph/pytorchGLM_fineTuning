@@ -237,7 +237,7 @@ class SingleShifterNetwork(BaseModel):
         dxy = self.shifter_nn(shifter_input)
         dxs = torch.zeros_like(dxy)
         dxs[:,0] = dxy[:,0]
-        dxs = dxs.to(self.device)
+        dxs = dxs.to(inputs.device)
         shift = Affine(angle=torch.clamp(dxs[:,-1],min=-45,max=45),translation=dxs[:,:2])
         inputs = shift(inputs)
         inputs = inputs.reshape(batchsize,-1).contiguous()
